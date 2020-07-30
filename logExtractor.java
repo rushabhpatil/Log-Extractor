@@ -8,6 +8,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Logextractor is a class to extract recording from list of files in given path
@@ -110,7 +111,48 @@ public class logExtractor {
         while (true) {
             String part = findnextsection(pos);
             if (matchisoformat(part.substring(1))) {
-                if (requiredstamp(part) != "") {
+                if (requiredstamp(part.substring(1)) != "") {
+                    return true;
+                } else {
+                    return false;
+                }
+            } else if (fileEndFlag) {
+                return false;
+            }
+
+        }
+    }
+
+    /**
+     * Compare date if it is greater than t_init
+     * 
+     * @param Date: String
+     * @return String
+     */
+    public String dategreater(String str) {
+        ZonedDateTime dt = ZonedDateTime.parse(str, isoformat);
+        if ((t_init.isBefore(dt)) || t_init.equals(dt)) {
+            return str;
+        } else {
+            return "";
+        }
+    }
+
+    /**
+     * Given random address of file, Function checks next row timestamp for greater
+     * than t_init boundaries
+     * 
+     * @param Address: RandomAccessfile
+     * @return Boolean
+     */
+    public Boolean checkgreater(RandomAccessFile pos) {
+        fileEndFlag = false;
+        findnextsection(pos);
+
+        while (true) {
+            String part = findnextsection(pos);
+            if (matchisoformat(part.substring(1))) {
+                if (dategreater(part.substring(1)) != "") {
                     return true;
                 } else {
                     return false;
@@ -205,24 +247,26 @@ public class logExtractor {
                 size = hold.length();
                 Long lo = (long) 1;
                 Long hi = size / packetsize;
-                Long packetsize = (long) 1;
+                // Long packetsize = (long) 1;
                 if (hi != 0) {
                     packetsize = size / hi;
                 }
+                Long mid = lo;
                 while (lo < hi) {
-                    Long mid = (lo + hi) / 2;
+                    mid = (lo + hi) / 2;
                     initialpos = hold;
                     try {
                         initialpos.seek((mid - 1) * packetsize);
                     } catch (IOException e) {
                         e.printStackTrace();
                     }
-                    if (checkfirststamp(initialpos)) {
+                    if (checkgreater(initialpos)) {
                         hi = mid - 1;
                     } else {
-                        lo = mid;
+                        lo = mid + 1;
                     }
                 }
+                lo = mid - 1;
                 initialpos = hold;
                 try {
                     initialpos.seek((lo - 1) * packetsize);
@@ -246,69 +290,55 @@ public class logExtractor {
      * @param FolderPath
      */
     public static void main(String args[]) {
-
-        File[] fileList = new File(args[2]).listFiles();
-        Integer n = fileList.length;
-        logExtractor lge = new logExtractor();
-        RandomAccessFile targetfile, processrafile, temp;
-        Integer lo = 0, hi = n - 1;
-        Long packetsize = Math.round(Math.pow(10, 6)); // For approx 1MB packet
-        try {
-            while (lo < hi) {
-
-                Integer mid = (lo + hi) / 2;
-                RandomAccessFile midrafile = new RandomAccessFile(fileList[mid], "r");
-                if (lge.checkfirststamp(midrafile)) {
-                    hi = mid - 1;
-                } else {
-                    lo = mid;
-                }
-                targetfile = new RandomAccessFile(fileList[lo], "r");
-                lge.setquery(targetfile, args[0], args[1]);
-                lge.findrecordsinfile(packetsize);
-            }
-        } catch (FileNotFoundException e) {
-
-            e.printStackTrace();
-        }
-
-        // Print all records sequentially from next files if they satisfy time
-        // boundaries.
-        Integer idx = 1;
-        try {
-            while (true) {
-
-                processrafile = new RandomAccessFile(fileList[lo + idx], "r");
-                temp = processrafile;
-                String firstrowtime = lge.findnextsection(temp);
-
-                if (lge.requiredstamp(firstrowtime) != "") {
-                    lge.setquery(processrafile, args[0], args[1]);
-                    lge.findrecordsinfile(packetsize);
-                } else {
-                    break;
-                }
-                idx++;
-
-            }
-        } catch (FileNotFoundException e) {
-
-            e.printStackTrace();
-        }
-
-        // Sample Code for testing code on single file.
         /*
-         * try { RandomAccessFile myfile = new RandomAccessFile("trial3.log", "r");
-         * String t1 = "2020-06-23T12:02:23.178+0530"; String t2 =
-         * "2020-06-23T12:06:23.178+0530";
+         * File[] fileList = new File(args[2]).listFiles(); Integer n = fileList.length;
+         * logExtractor lge = new logExtractor(); RandomAccessFile targetfile,
+         * processrafile, temp; Integer lo = 0, hi = n - 1; Long packetsize =
+         * Math.round(Math.pow(10, 6)); // For approx 1MB packet try { while (lo < hi) {
          * 
-         * lge.setquery(myfile, t1, t2); lge.findrecordsinfile();
+         * Integer mid = (lo + hi) / 2; RandomAccessFile midrafile = new
+         * RandomAccessFile(fileList[mid], "r"); if (lge.checkfirststamp(midrafile)) {
+         * hi = mid - 1; } else { lo = mid; } targetfile = new
+         * RandomAccessFile(fileList[lo], "r"); lge.setquery(targetfile, args[0],
+         * args[1]); lge.findrecordsinfile(packetsize); } } catch (FileNotFoundException
+         * e) {
          * 
-         * try { System.out.println(myfile.length());
+         * e.printStackTrace(); }
          * 
-         * } catch (IOException e) { e.printStackTrace(); }
+         * // Print all records sequentially from next files if they satisfy time //
+         * boundaries. Integer idx = 1; try { while (true) {
          * 
-         * } catch (IOException e) { e.printStackTrace(); }
+         * processrafile = new RandomAccessFile(fileList[lo + idx], "r"); temp =
+         * processrafile; String firstrowtime = lge.findnextsection(temp);
+         * 
+         * if (lge.requiredstamp(firstrowtime) != "") { lge.setquery(processrafile,
+         * args[0], args[1]); lge.findrecordsinfile(packetsize); } else { break; }
+         * idx++;
+         * 
+         * } } catch (FileNotFoundException e) {
+         * 
+         * e.printStackTrace(); }
          */
+        // Sample Code for testing code on single file.
+
+        try {
+            RandomAccessFile myfile = new RandomAccessFile("trial3.log", "r");
+            String t1 = "2020-07-23T12:02:23.178+0530";
+            String t2 = "2020-07-23T12:10:23.178+0530";
+            logExtractor lge = new logExtractor();
+            lge.setquery(myfile, t1, t2);
+            lge.findrecordsinfile((long) 1000000);
+
+            try {
+                System.out.println(myfile.length());
+
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
     }
 }
